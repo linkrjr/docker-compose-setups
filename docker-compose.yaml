@@ -1,0 +1,61 @@
+# Grafana otel-lgtm (Loki, Grafana, Tempo, Prometheus, Pyroscope, OTel Collector) + MinIO.
+# Loki and Tempo use MinIO as S3-compatible object storage. Prometheus TSDB and Pyroscope
+# remain on the mounted /data volume (Prometheus does not write TSDB to S3 directly).
+
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Buckets must exist before Loki/Tempo start. Keep user/password in sync with `minio` and `config/*.yaml`.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb local/loki --ignore-existing &&
+        mc mb local/tempo --ignore-existing
+
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    hostname: lgtm
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+      - "4040:4040"
+      - "4317:4317"
+      - "4318:4318"
+      - "9090:9090"
+    environment:
+      GF_PATHS_DATA: /data/grafana
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - lgtm_data:/data
+      - ./config/loki-config.yaml:/otel-lgtm/loki-config.yaml:ro
+      - ./config/tempo-config.yaml:/otel-lgtm/tempo-config.yaml:ro
+
+volumes:
+  minio_data:
+  lgtm_data:
