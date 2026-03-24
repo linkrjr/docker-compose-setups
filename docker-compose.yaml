@@ -1,8 +1,26 @@
 # Grafana otel-lgtm (Loki, Grafana, Tempo, Prometheus, Pyroscope, OTel Collector) + MinIO.
 # Loki and Tempo use MinIO as S3-compatible object storage. Prometheus TSDB and Pyroscope
 # remain on the mounted /data volume (Prometheus does not write TSDB to S3 directly).
+#
+# LocalStack exposes SNS and SQS on the edge port (default credentials: test / test).
 
 services:
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sns,sqs
+      DEBUG: "0"
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -59,3 +77,4 @@ services:
 volumes:
   minio_data:
   lgtm_data:
+  localstack_data:
